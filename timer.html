@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NASA Countdown Timer</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --amber: #ffb300;
+    --amber-dim: #7a5500;
+    --amber-glow: rgba(255, 179, 0, 0.4);
+    --green: #00ff88;
+    --green-dim: #004d29;
+    --red: #ff3333;
+    --bg: #080a0c;
+    --panel: #0d1117;
+    --border: #1e2d1e;
+    --text-dim: #3a5a3a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--amber);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  .console {
+    background: var(--panel);
+    border: 1px solid #1a2a1a;
+    border-radius: 4px;
+    padding: 40px;
+    width: 680px;
+    max-width: 95vw;
+    box-shadow:
+      0 0 60px rgba(0,50,0,0.5),
+      inset 0 1px 0 rgba(255,255,255,0.03),
+      0 0 0 1px rgba(0,255,100,0.05);
+    position: relative;
+  }
+
+  /* Corner brackets */
+  .console::before, .console::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--green);
+    border-style: solid;
+    opacity: 0.4;
+  }
+  .console::before { top: 10px; left: 10px; border-width: 1px 0 0 1px; }
+  .console::after  { bottom: 10px; right: 10px; border-width: 0 1px 1px 0; }
+
+  .header {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+
+  .nasa-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 11px;
+    letter-spacing: 8px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .mission-id {
+    font-size: 10px;
+    color: var(--amber-dim);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  .title-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 14px 0 8px;
+  }
+
+  .title-bar .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--amber-dim));
+  }
+  .title-bar .line:last-child {
+    background: linear-gradient(to left, transparent, var(--amber-dim));
+  }
+
+  .title-text {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: var(--amber);
+    text-shadow: 0 0 20px var(--amber-glow);
+  }
+
+  /* Main display */
+  .display-wrap {
+    background: #050a05;
+    border: 1px solid #162016;
+    border-radius: 3px;
+    padding: 28px 20px 20px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+
+  .t-label {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: all 0.3s;
+  }
+  .dot.active {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse-dot 1s infinite;
+  }
+  .dot.hold { background: var(--amber); box-shadow: 0 0 8px var(--amber-glow); }
+  .dot.ended { background: var(--red); box-shadow: 0 0 8px rgba(255,50,50,0.5); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .countdown-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .digit-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .digits {
+    display: flex;
+    gap: 4px;
+  }
+
+  .digit {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(36px, 7vw, 68px);
+    color: var(--amber);
+    text-shadow:
+      0 0 10px var(--amber),
+      0 0 30px var(--amber-glow),
+      0 0 60px rgba(255,179,0,0.15);
+    line-height: 1;
+    min-width: 1ch;
+    text-align: center;
+    transition: color 0.2s, text-shadow 0.2s;
+    position: relative;
+  }
+
+  /* Ghost digit overlay for depth */
+  .digit::before {
+    content: attr(data-ghost);
+    position: absolute;
+    inset: 0;
+    color: var(--amber-dim);
+    text-shadow: none;
+    opacity: 0.18;
+    pointer-events: none;
+  }
+
+  .digit.flash {
+    animation: digit-flash 0.08s ease;
+  }
+
+  @keyframes digit-flash {
+    0% { opacity: 1; }
+    50% { opacity: 0.2; }
+    100% { opacity: 1; }
+  }
+
+  .unit-label {
+    font-size: 8px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .sep {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(28px, 5vw, 52px);
+    color: var(--amber-dim);
+    margin: 0 2px;
+    padding-bottom: 20px;
+    animation: sep-blink 1s step-end infinite;
+    align-self: flex-start;
+    padding-top: 4px;
+    opacity: 0.6;
+  }
+
+  .sep.running { animation: sep-blink 1s step-end infinite; }
+  .sep.paused { opacity: 0.2; animation: none; }
+
+  @keyframes sep-blink {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.1; }
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .time-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .preset-btn {
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    border-radius: 2px;
+  }
+
+  .preset-btn:hover, .preset-btn.active {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(255,179,0,0.08);
+    box-shadow: 0 0 10px rgba(255,179,0,0.15);
+  }
+
+  .custom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .custom-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .time-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .time-input {
+    background: #050a05;
+    border: 1px solid #1a2a1a;
+    color: var(--amber);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    width: 42px;
+    text-align: center;
+    padding: 4px 2px;
+    outline: none;
+    border-radius: 2px;
+    transition: border-color 0.2s;
+  }
+
+  .time-input:focus {
+    border-color: var(--amber-dim);
+    box-shadow: 0 0 8px rgba(255,179,0,0.1);
+  }
+
+  .time-input-sep {
+    color: var(--amber-dim);
+    font-size: 12px;
+  }
+
+  .set-btn {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+
+  .set-btn:hover {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,255,136,0.06);
+    box-shadow: 0 0 10px rgba(0,255,136,0.1);
+  }
+
+  .action-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .action-btn {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 3px;
+    padding: 10px 24px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    border-radius: 2px;
+    background: transparent;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-start {
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .btn-start:hover {
+    background: rgba(0,255,136,0.1);
+    box-shadow: 0 0 20px rgba(0,255,136,0.2), inset 0 0 20px rgba(0,255,136,0.05);
+  }
+
+  .btn-hold {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .btn-hold:hover {
+    background: rgba(255,179,0,0.1);
+    box-shadow: 0 0 20px var(--amber-glow), inset 0 0 20px rgba(255,179,0,0.05);
+  }
+
+  .btn-reset {
+    border-color: #2a1a1a;
+    color: #4a2a2a;
+  }
+  .btn-reset:hover {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(255,50,50,0.06);
+    box-shadow: 0 0 20px rgba(255,50,50,0.15);
+  }
+
+  /* Footer telemetry bar */
+  .telemetry {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid #0e180e;
+    font-size: 8px;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .telem-item span {
+    color: var(--amber-dim);
+    margin-left: 4px;
+  }
+
+  /* Liftoff overlay */
+  .liftoff-overlay {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .liftoff-overlay.show {
+    opacity: 1;
+  }
+
+  .liftoff-text {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(40px, 10vw, 100px);
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-shadow:
+      0 0 20px var(--green),
+      0 0 60px rgba(0,255,136,0.5),
+      0 0 120px rgba(0,255,136,0.2);
+    animation: liftoff-anim 2.5s ease forwards;
+  }
+
+  @keyframes liftoff-anim {
+    0%   { opacity: 0; transform: scale(0.5) translateY(40px); }
+    20%  { opacity: 1; transform: scale(1.05) translateY(0); }
+    70%  { opacity: 1; transform: scale(1) translateY(0); }
+    100% { opacity: 0; transform: scale(1.2) translateY(-40px); }
+  }
+
+  /* Warning state */
+  .warning .digit {
+    color: var(--red);
+    text-shadow:
+      0 0 10px var(--red),
+      0 0 30px rgba(255,50,50,0.3);
+    animation: warning-pulse 0.5s ease infinite alternate;
+  }
+  @keyframes warning-pulse {
+    from { text-shadow: 0 0 10px var(--red), 0 0 30px rgba(255,50,50,0.3); }
+    to   { text-shadow: 0 0 20px var(--red), 0 0 50px rgba(255,50,50,0.5), 0 0 80px rgba(255,50,50,0.2); }
+  }
+</style>
+</head>
+<body>
+
+<div class="liftoff-overlay" id="liftoffOverlay">
+  <div class="liftoff-text">LIFTOFF</div>
+</div>
+
+<div class="console">
+
+  <div class="header">
+    <div class="nasa-logo">National Aeronautics &amp; Space Administration</div>
+    <div class="mission-id" id="missionId">MISSION ▸ KSC-LC-39A ▸ TERMINAL COUNTDOWN</div>
+    <div class="title-bar">
+      <div class="line"></div>
+      <div class="title-text">T-MINUS</div>
+      <div class="line"></div>
+    </div>
+  </div>
+
+  <div class="display-wrap" id="displayWrap">
+    <div class="t-label">ELAPSED ▸ 00:00:00</div>
+    <div class="status-dot">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">STANDBY</span>
+    </div>
+
+    <div class="countdown-row">
+      <div class="digit-group">
+        <div class="digits">
+          <span class="digit" id="h1" data-ghost="8">0</span>
+          <span class="digit" id="h2" data-ghost="8">0</span>
+        </div>
+        <div class="unit-label">HRS</div>
+      </div>
+      <div class="sep" id="sep1">:</div>
+      <div class="digit-group">
+        <div class="digits">
+          <span class="digit" id="m1" data-ghost="5">0</span>
+          <span class="digit" id="m2" data-ghost="9">0</span>
+        </div>
+        <div class="unit-label">MIN</div>
+      </div>
+      <div class="sep" id="sep2">:</div>
+      <div class="digit-group">
+        <div class="digits">
+          <span class="digit" id="s1" data-ghost="5">0</span>
+          <span class="digit" id="s2" data-ghost="9">0</span>
+        </div>
+        <div class="unit-label">SEC</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+
+    <div class="time-presets">
+      <button class="preset-btn" onclick="setPreset(600)">T-10:00</button>
+      <button class="preset-btn" onclick="setPreset(300)">T-05:00</button>
+      <button class="preset-btn" onclick="setPreset(60)">T-01:00</button>
+      <button class="preset-btn" onclick="setPreset(30)">T-00:30</button>
+      <button class="preset-btn" onclick="setPreset(10)">T-00:10</button>
+    </div>
+
+    <div class="custom-row">
+      <div class="custom-label">Custom ▸</div>
+      <div class="time-input-group">
+        <input class="time-input" id="inH" type="number" min="0" max="99" value="0" placeholder="HH">
+        <span class="time-input-sep">:</span>
+        <input class="time-input" id="inM" type="number" min="0" max="59" value="1" placeholder="MM">
+        <span class="time-input-sep">:</span>
+        <input class="time-input" id="inS" type="number" min="0" max="59" value="0" placeholder="SS">
+      </div>
+      <button class="set-btn" onclick="setCustom()">SET</button>
+    </div>
+
+    <div class="action-row">
+      <button class="action-btn btn-start" id="startBtn" onclick="startStop()">INITIATE</button>
+      <button class="action-btn btn-hold" onclick="hold()">HOLD</button>
+      <button class="action-btn btn-reset" onclick="reset()">ABORT</button>
+    </div>
+
+  </div>
+
+  <div class="telemetry">
+    <div class="telem-item">SYS STATUS <span id="sysStatus">NOM</span></div>
+    <div class="telem-item">SEQUENCE <span id="seqStatus">STANDBY</span></div>
+    <div class="telem-item">RANGE SAFETY <span id="rangeStatus">GREEN</span></div>
+    <div class="telem-item">LAUNCH CTRL <span id="ctrlStatus">KSC</span></div>
+  </div>
+
+</div>
+
+<script>
+  let totalSeconds = 60;
+  let remaining = 60;
+  let startTotal = 60;
+  let interval = null;
+  let running = false;
+  let onHold = false;
+  let elapsed = 0;
+  let elapsedInterval = null;
+
+  const digits = {
+    h1: document.getElementById('h1'),
+    h2: document.getElementById('h2'),
+    m1: document.getElementById('m1'),
+    m2: document.getElementById('m2'),
+    s1: document.getElementById('s1'),
+    s2: document.getElementById('s2'),
+  };
+
+  const prevVals = { h1:'0',h2:'0',m1:'0',m2:'0',s1:'0',s2:'0' };
+
+  function updateDisplay(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+
+    const hStr = String(h).padStart(2,'0');
+    const mStr = String(m).padStart(2,'0');
+    const sStr = String(s).padStart(2,'0');
+
+    const vals = { h1:hStr[0], h2:hStr[1], m1:mStr[0], m2:mStr[1], s1:sStr[0], s2:sStr[1] };
+
+    for (const [k,v] of Object.entries(vals)) {
+      if (v !== prevVals[k]) {
+        digits[k].textContent = v;
+        digits[k].classList.remove('flash');
+        void digits[k].offsetWidth;
+        digits[k].classList.add('flash');
+        prevVals[k] = v;
+      }
+    }
+
+    // Warning state (≤10s)
+    document.getElementById('displayWrap').classList.toggle('warning', secs <= 10 && secs > 0 && running);
+
+    // Elapsed
+    const eh = Math.floor(elapsed/3600);
+    const em = Math.floor((elapsed%3600)/60);
+    const es = elapsed%60;
+    document.querySelector('.t-label').textContent =
+      `ELAPSED ▸ ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}:${String(es).padStart(2,'0')}`;
+  }
+
+  function setStatus(dot, text, seq) {
+    const d = document.getElementById('statusDot');
+    const t = document.getElementById('statusText');
+    d.className = 'dot ' + dot;
+    t.textContent = text;
+    document.getElementById('seqStatus').textContent = seq;
+  }
+
+  function setPreset(secs) {
+    if (running) return;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    remaining = secs;
+    startTotal = secs;
+    totalSeconds = secs;
+    updateDisplay(secs);
+    updateInputs(secs);
+    setStatus('', 'STANDBY', 'STANDBY');
+    document.getElementById('displayWrap').classList.remove('warning');
+  }
+
+  function updateInputs(secs) {
+    document.getElementById('inH').value = Math.floor(secs/3600);
+    document.getElementById('inM').value = Math.floor((secs%3600)/60);
+    document.getElementById('inS').value = secs%60;
+  }
+
+  function setCustom() {
+    if (running) return;
+    const h = parseInt(document.getElementById('inH').value) || 0;
+    const m = parseInt(document.getElementById('inM').value) || 0;
+    const s = parseInt(document.getElementById('inS').value) || 0;
+    const total = h*3600 + m*60 + s;
+    if (total <= 0) return;
+    remaining = total;
+    startTotal = total;
+    totalSeconds = total;
+    updateDisplay(total);
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    setStatus('', 'STANDBY', 'STANDBY');
+    document.getElementById('displayWrap').classList.remove('warning');
+  }
+
+  function startStop() {
+    if (remaining <= 0) return;
+    if (running) return;
+    onHold = false;
+    running = true;
+    document.getElementById('startBtn').textContent = 'RUNNING';
+    document.getElementById('sysStatus').textContent = 'NOM';
+    document.getElementById('rangeStatus').textContent = 'GO';
+    setStatus('active', 'RUNNING', 'ACTIVE');
+
+    interval = setInterval(() => {
+      remaining--;
+      elapsed++;
+      updateDisplay(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        clearInterval(elapsedInterval);
+        running = false;
+        setStatus('ended', 'T-ZERO', 'COMPLETE');
+        document.getElementById('startBtn').textContent = 'INITIATE';
+        document.getElementById('sysStatus').textContent = 'T+0';
+        document.getElementById('displayWrap').classList.remove('warning');
+        showLiftoff();
+      }
+    }, 1000);
+  }
+
+  function hold() {
+    if (!running) return;
+    clearInterval(interval);
+    running = false;
+    onHold = true;
+    document.getElementById('startBtn').textContent = 'RESUME';
+    setStatus('hold', 'HOLD', 'HOLD');
+    document.getElementById('sysStatus').textContent = 'HOLD';
+    document.getElementById('rangeStatus').textContent = 'HOLD';
+    document.getElementById('displayWrap').classList.remove('warning');
+
+    // Make resume work
+    document.getElementById('startBtn').onclick = resume;
+  }
+
+  function resume() {
+    if (running) return;
+    running = true;
+    onHold = false;
+    document.getElementById('startBtn').textContent = 'RUNNING';
+    document.getElementById('startBtn').onclick = startStop;
+    setStatus('active', 'RUNNING', 'ACTIVE');
+    document.getElementById('sysStatus').textContent = 'NOM';
+    document.getElementById('rangeStatus').textContent = 'GO';
+
+    interval = setInterval(() => {
+      remaining--;
+      elapsed++;
+      updateDisplay(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        running = false;
+        setStatus('ended', 'T-ZERO', 'COMPLETE');
+        document.getElementById('startBtn').textContent = 'INITIATE';
+        document.getElementById('startBtn').onclick = startStop;
+        document.getElementById('displayWrap').classList.remove('warning');
+        showLiftoff();
+      }
+    }, 1000);
+  }
+
+  function reset() {
+    clearInterval(interval);
+    running = false;
+    onHold = false;
+    elapsed = 0;
+    remaining = startTotal;
+    updateDisplay(remaining);
+    document.getElementById('startBtn').textContent = 'INITIATE';
+    document.getElementById('startBtn').onclick = startStop;
+    setStatus('', 'STANDBY', 'STANDBY');
+    document.getElementById('sysStatus').textContent = 'NOM';
+    document.getElementById('rangeStatus').textContent = 'GREEN';
+    document.getElementById('displayWrap').classList.remove('warning');
+  }
+
+  function showLiftoff() {
+    const overlay = document.getElementById('liftoffOverlay');
+    overlay.classList.add('show');
+    setTimeout(() => overlay.classList.remove('show'), 2600);
+  }
+
+  // Init
+  updateDisplay(60);
+</script>
+</body>
+</html>
